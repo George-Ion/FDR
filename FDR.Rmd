@@ -5,7 +5,15 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
-Firstly, we do a fake gene expression experiment to see which genes are expressed differently across two groups (e.g. cancer and control). By randomly generating 20,000 genes with randomly assigned labels, we ensure that each hypothesis is actually null (i.e. there is no real difference between the genes across groups). Running a t‑test for each gene then shows how many “significant” p‑values appear by chance when performing thousands of tests simultaneously.
+### Problem Definition
+
+False discovery rate control is needed because modern statistical analyses often involve testing thousands of hypotheses at once, such as in genomics. Here, even a relatively low per‑test error rate leads to a flood of false positives simply because of chance. Traditional methods like the Bonferroni correction protect against any false positives but become so strict that they eliminate real discoveries. FDR offers a middle ground because it limits the expected proportion of false positives among the results declared significant. This allows us to detect meaningful differences while still keeping false discoveries under control. In the following, we will explore the FDR in practice and examine how it behaves under different testing scenarios.
+
+### Why use the FDR?
+
+Firstly, we do a fake gene expression experiment to see whether we can identify "genes" that are expressed differently across two groups (e.g. cancer and control). Through this, we want to demonstrate that we can make "discoveries" purely through chance. 
+
+By randomly generating 20,000 genes with randomly assigned labels, we ensure that each hypothesis is actually null (i.e. there is no real difference between the genes across groups). Running a t‑test for each gene then shows how many “significant” p‑values appear by chance when performing thousands of tests simultaneously.
 
 ```{r gene_simulation_no_corellation, message= FALSE, warning=FALSE}
 set.seed(42)
@@ -40,43 +48,59 @@ hist(p_values, breaks = 50, col = "skyblue",
      xlab = "P-value", ylab = "Frequency")
 abline(v = alpha, col = "red", lwd = 2, lty = 2)
 ```
-We can clearly see that there are some values that were tagged as significant but in reality the correlation is non-existent, as the genes are purely random.
+We can clearly see that there are some p-values that were tagged as significant but in reality the correlation is non-existent, as the genes are purely random. To be exact, there are 1042 rejected hypotheses, which is around \alpha = 5% of 20,000 and also the expected false positive rate. 
+
+This shows that we somehow need to control for false discoveries in multiple hypothesis testing. Else, these results of these statistical tests cannot be trusted. 
 
 
-In this section we implement the Benjamin-Hochberg Procedure vs the Bonferroni
+### Bonferroni vs. Benjamini Hochberg
+
+In this section, we implement the Benjamini–Hochberg procedure alongside the Bonferroni correction. Both methods set a significance cutoff to decide which hypotheses are rejected, but they do it differently. Bonferroni uses one fixed and very strict threshold for all tests and tries to prevent any false positives, while the Benjamini–Hochberg procedure assigns a separate threshold to each ranked p‑value to control the rate of false positives. This BH cutoff grows with the rank k, as it is defined as (k/m)q , so higher‑ranked p‑values are compared against a larger allowable value. Once a rank k is found where the p-value is larger than the threshold for that rank, all following p-values are not rejected.
 
 ```{r FDRvsFWER}
-m <- 20 # Number of tests
+# --- Use the p-values from your original simulation ---
+# p_values already exists from the t-tests on 20,000 genes
+
 alpha <- 0.05
-k <- 1:m
+m <- length(p_values)
 
-# Bonferroni Threshold (FWER)
-# Constant line: alpha / m
-bonf_threshold <- rep(alpha / m, m) 
+# Sort p-values and keep only the smallest 300 for visualization
+k_show <- 1:70
+p_sorted <- sort(p_values)[k_show]
 
-# BH Threshold (FDR)
-# Linear line: (k / m) * alpha
-bh_threshold <- (k / m) * alpha 
+# Corresponding thresholds
+bonf_threshold <- rep(alpha / m, length(k_show))
+bh_threshold <- (k_show / m) * alpha
 
-# Simulated P-values (some signal, some noise)
-set.seed(123)
-p_values <- sort(c(runif(5, 0, 0.01), runif(15, 0.05, 1)))
+# Plot
+plot(k_show, p_sorted,
+     pch = 19, col = "black",
+     main = "Bonferroni (FWER) vs BH (FDR) for Generated Gene Data",
+     xlab = "Rank of P-value (k)",
+     ylab = "P-value",
+     ylim = c(0, max(p_sorted)))
 
-# Plotting the Comparison
-plot(k, p_values, pch = 19, col = "black", 
-     main = "FWER vs. FDR Thresholds",
-     xlab = "Rank of P-value (k)", ylab = "P-value")
-lines(k, bonf_threshold, col = "red", lwd = 2, lty = 2) # Bonferroni
-lines(k, bh_threshold, col = "blue", lwd = 2)           # FDR/BH
+lines(k_show, bonf_threshold, col = "red", lwd = 2, lty = 2)   # Bonferroni
+lines(k_show, bh_threshold, col = "blue", lwd = 2)            # BH
 
-legend("topleft", legend = c("P-values", "Bonferroni (FWER)", "BH (FDR)"),
-       col = c("black", "red", "blue"), lty = c(NA, 2, 1), pch = c(19, NA, NA))
-       
+legend("topleft",
+       legend = c("P-values", "Bonferroni (FWER)", "BH (FDR)"),
+       col = c("black", "red", "blue"),
+       pch = c(19, NA, NA),
+       lty = c(NA, 2, 1),
+       lwd = c(NA, 2, 2))
 ```
 
+As we can see, the BH falsely rejects only 53 hypotheses compared to the 1042 that were falsely rejected before, so it successfully prevents a large rate of false discoveries. 
+
+Bonferroni rejects even less hypotheses (only 5) and therefore performs better for this example. However, this comes at the cost of being extremely conservative. Bonferroni avoids false positives by setting a threshold so strict that it also suppresses almost all true discoveries. BH on the other hand keeps false discoveries low while still allowing a meaningful number of hypotheses to pass the threshold, making it far more useful in large‑scale testing settings where some true effects are expected and we want to be more explorative.
+
+
+### How does this affect the making of discoveries?
 
 
 In the code below we are using simulation data to make sure we are aware of the true values of false and true positives to be able to compare FDR to FWER.
+We generate our own data here so that we can know the underlying proportion of true discoveries. 
 
 
 ```{r simulation_data_case_study}
