@@ -5,39 +5,56 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
-Firstly we show how random values(random genes with no corellation) can affect an experiment with p_value < 0.05 when the number of experiments is large. 
+Firstly, we do a fake gene expression experiment to see which genes are expressed differently across two groups (e.g. cancer and control). By randomly generating 20,000 genes with randomly assigned labels, we ensure that each hypothesis is actually null (i.e. there is no real difference between the genes across groups). Running a t‑test for each gene then shows how many “significant” p‑values appear by chance when performing thousands of tests simultaneously.
 
 ```{r gene_simulation_no_corellation, message= FALSE, warning=FALSE}
 set.seed(42)
-m <- 20000
-p_values <- runif(m, 0, 1) # Null hypothesis is true for all
+
+# Simulate a realistic gene expression matrix
+m <- 20000   # number of genes
+n1 <- 50     # group 1 samples (control)
+n2 <- 50     # group 2 samples (cancer)
+n <- n1 + n2 # total
+
+# Gene expression: each gene has only random noise
+X <- matrix(rnorm(m * n), nrow = m)
+
+# Create random group labels (e.g. cancer vs control)
+labels <- factor(c(rep("A", n1), rep("B", n2)))
+
+# Run t-tests for each gene using the labels
+p_values <- apply(X, 1, function(gene) {
+  t.test(gene ~ labels)$p.value
+})
 
 # Expected false positives at alpha = 0.05
 alpha <- 0.05
 false_positives <- sum(p_values < alpha)
+
 print(paste("Expected False Positives:", m * alpha))
 print(paste("Actual Simulated False Positives:", false_positives))
 
-# Visual: Distribution of P-values (Page 2)
-hist(p_values, breaks = 50, col = "skyblue", main = "P-value Distribution",
+# Visual: Distribution of P-values
+hist(p_values, breaks = 50, col = "skyblue",
+     main = "P-value Distribution for Random Labels and Genes",
      xlab = "P-value", ylab = "Frequency")
 abline(v = alpha, col = "red", lwd = 2, lty = 2)
 ```
-We can clearly see that there are some values that were tagged as significant but in reallity the correlation is non existant (random genes)
+We can clearly see that there are some values that were tagged as significant but in reality the correlation is non-existent, as the genes are purely random.
 
 
 In this section we implement the Benjamin-Hochberg Procedure vs the Bonferroni
 
-```{r param}
+```{r FDRvsFWER}
 m <- 20 # Number of tests
 alpha <- 0.05
 k <- 1:m
 
-# 1. Bonferroni Threshold (FWER)
+# Bonferroni Threshold (FWER)
 # Constant line: alpha / m
 bonf_threshold <- rep(alpha / m, m) 
 
-# 2. BH Threshold (FDR)
+# BH Threshold (FDR)
 # Linear line: (k / m) * alpha
 bh_threshold <- (k / m) * alpha 
 
@@ -59,21 +76,22 @@ legend("topleft", legend = c("P-values", "Bonferroni (FWER)", "BH (FDR)"),
 
 
 
+In the code below we are using simulation data to make sure we are aware of the true values of false and true positives to be able to compare FDR to FWER.
 
 
-```{r fscd}
+```{r simulation_data_case_study}
 
 # Set seed so the random numbers are exactly the same every time you run it
 set.seed(42)
 
-# 1. Simulate the Data
+# Simulate the Data
 n_genes <- 1000
 n_samples_per_group <- 10
 alpha <- 0.05
 
 # We will simulate 1000 genes. 
-# The first 900 have NO real difference (Null is true).
-# The last 100 have a REAL difference (Alternative is true).
+# The first 900 have NO real difference (Null hypothesis is true).
+# The last 100 have a REAL difference (Decline the null hypothesis).
 
 # Control Group (Group A)
 group_A <- matrix(rnorm(n_genes * n_samples_per_group, mean = 10, sd = 2), nrow = n_genes)
@@ -83,26 +101,25 @@ group_B_null <- matrix(rnorm(900 * n_samples_per_group, mean = 10, sd = 2), nrow
 group_B_diff <- matrix(rnorm(100 * n_samples_per_group, mean = 13, sd = 2), nrow = 100) 
 group_B <- rbind(group_B_null, group_B_diff)
 
-# 2. Run t-tests on all 1000 genes
+# Run t-tests on all 1000 genes
 p_values <- numeric(n_genes)
 for(i in 1:n_genes) {
   test <- t.test(group_A[i, ], group_B[i, ])
   p_values[i] <- test$p.value
 }
 
-# 3. Apply the Corrections
-# A) Uncorrected
+# Apply the Corrections
+# Uncorrected p_values
 sig_uncorrected <- p_values < alpha
 
-# B) FWER: Bonferroni
+# FWER: Bonferroni
 p_bonferroni <- p.adjust(p_values, method = "bonferroni")
 sig_bonferroni <- p_bonferroni < alpha
 
-# C) FDR: Benjamini-Hochberg (BH)
+# FDR: Benjamini-Hochberg (BH)
 p_fdr <- p.adjust(p_values, method = "BH")
 sig_fdr <- p_fdr < alpha
 
-# 4. Tally the Results!
 # Remember: Genes 1-900 are Null (False Positives if flagged)
 # Genes 901-1000 are True signals (True Positives if flagged)
 
@@ -113,17 +130,14 @@ results <- data.frame(
   True_Positives = c(sum(sig_uncorrected[901:1000]), sum(sig_bonferroni[901:1000]), sum(sig_fdr[901:1000]))
 )
 
-print("--- Case Study Results ---")
 print(results)
 ```
+We can certainly tell that there is a significant diference between the two methods. Bonferroni method is always correct but did only flaged 5 p_values as significant, while Benjamini-Hochberg procedure correctly pointed to 51 true positive values and 2 false positive. While 49 true positives were not flagged by FDR.
 
 
-
-```{r asdsad}
-# Make sure to install ggplot2 if you haven't already: install.packages("ggplot2")
+```{r plot_simulation_results}
 library(ggplot2)
 
-# 1. Prepare the data for plotting
 # We need to track which genes were actually true differences vs. nulls
 gene_type <- c(rep("Null (Noise)", 900), rep("True Signal", 100))
 
@@ -133,20 +147,19 @@ plot_data <- data.frame(
   Type = gene_type
 )
 
-# 2. Sort the data by P-value (critical for the BH procedure)
+# Sort the data by P-value (critical for the BH procedure)
 plot_data <- plot_data[order(plot_data$P_Value), ]
 plot_data$Rank <- 1:n_genes
 
-# 3. Calculate the threshold lines
+# Calculate the threshold lines
 # Bonferroni is a flat line: alpha / m
 bonferroni_threshold <- alpha / n_genes
 
 # Benjamini-Hochberg is a diagonal line: (Rank / m) * alpha
 plot_data$BH_Threshold <- (plot_data$Rank / n_genes) * alpha
 
-# 4. Create the plot
-# Note: We zoom in on the bottom left corner (lowest p-values) 
-# because that is where the action happens!
+# Create the plot
+# Note: We zoom in on the bottom left corner (lowest p-values) because that is where p_values < 0.05 are 
 p <- ggplot(plot_data, aes(x = Rank, y = P_Value)) +
   # Plot the actual p-values
   geom_point(aes(color = Type), alpha = 0.8, size = 2.5) +
@@ -170,7 +183,7 @@ p <- ggplot(plot_data, aes(x = Rank, y = P_Value)) +
   scale_color_manual(values = c("Null (Noise)" = "gray70", "True Signal" = "darkorange")) +
   theme_minimal(base_size = 14) +
   labs(
-    title = "Why FDR Works Better for Genomics",
+    title = "FDR vs FWER for Genomics",
     subtitle = "Points below the dashed lines are declared 'Significant'",
     x = "Rank of P-Value",
     y = "P-Value",
@@ -180,4 +193,102 @@ p <- ggplot(plot_data, aes(x = Rank, y = P_Value)) +
 
 # Display the plot
 print(p)
+```
+The visualization helps us better understand the outcomes of our simulation data
+
+
+Real case study example, with gene data for leukemia. It is more difficult to draw the difference between the methods here because we dont know exactly the number of true signals.
+
+
+```{r real_gene_case_study, message=FALSE, warning=FALSE}
+install.packages("ISLR")
+library(ISLR)
+
+# Load the Microarray Dataset
+data(NCI60)
+gene_data <- NCI60$data      # The actual gene expression numbers (64 rows, 6830 columns)
+cancer_types <- NCI60$labs   # The labels for each of the 64 cell lines
+
+# We want to compare Leukemia cell lines vs. all other cancer cell lines
+is_leukemia <- cancer_types == "LEUKEMIA"
+
+# Run 6,830 T-tests (One for every single gene)
+# We use apply() to quickly loop through all 6830 columns 
+real_p_values <- apply(gene_data, 2, function(gene_expression) {
+  # Run a t-test comparing Leukemia expression vs. Other cancer expression
+  test_result <- t.test(gene_expression[is_leukemia], gene_expression[!is_leukemia])
+  return(test_result$p.value)
+})
+
+# Apply the Corrections
+alpha <- 0.05
+
+# Find how many are significant under each method
+sig_uncorrected <- real_p_values < alpha
+sig_bonferroni <- p.adjust(real_p_values, method = "bonferroni") < alpha
+sig_fdr <- p.adjust(real_p_values, method = "BH") < alpha
+
+# Summarize the Real-World Impact
+real_results <- data.frame(
+  Method = c("Uncorrected (p < 0.05)", "Bonferroni (FWER)", "Benjamini-Hochberg (FDR)"),
+  Significant_Genes_Found = c(sum(sig_uncorrected), sum(sig_bonferroni), sum(sig_fdr))
+)
+
+cat("Total Genes Tested:", length(real_p_values), "\n\n")
+print(real_results)
+```
+We can clearly see how much more stricter Bonferroni method is.
+
+Gemini was used to help us produce the code for the visualization
+
+```{r plot_real_data_ranked, fig.width=9, fig.height=6}
+library(ggplot2)
+
+# Sort the real p-values and assign ranks
+sorted_real_p <- sort(real_p_values)
+m_real <- length(sorted_real_p)
+rank_real <- 1:m_real
+alpha <- 0.05
+
+# Calculate the thresholds for the real dataset
+bonf_thresh_real <- alpha / m_real
+bh_thresh_real <- (rank_real / m_real) * alpha
+
+# Create a dataframe for ggplot
+plot_data_real <- data.frame(
+  Rank = rank_real,
+  P_Value = sorted_real_p,
+  BH_Threshold = bh_thresh_real
+)
+
+# Create the plot
+ggplot(plot_data_real, aes(x = Rank, y = P_Value)) +
+  # Plot the actual real gene p-values
+  geom_point(color = "black", alpha = 0.5, size = 1.5) +
+  
+  # The strict Bonferroni line (Red)
+  geom_hline(yintercept = bonf_thresh_real, color = "red", 
+             linetype = "dashed", linewidth = 1) +
+  
+  # The adaptive FDR line (Blue)
+  geom_line(aes(y = BH_Threshold), color = "blue", 
+            linewidth = 1) +
+  
+  # ZOOM IN: The action happens in the bottom left corner!
+  # We look at the top 2500 genes and zoom the y-axis to just above 0.05
+  coord_cartesian(xlim = c(1, 2500), ylim = c(0, 0.06)) +
+  
+  # Add the Uncorrected 0.05 threshold for reference
+  geom_hline(yintercept = alpha, color = "gray50", linetype = "dotted") +
+  annotate("text", x = 2000, y = 0.052, label = "Uncorrected (0.05)", color = "gray50") +
+  annotate("text", x = 100, y = bonf_thresh_real + 0.002, label = "Bonferroni", color = "red", hjust = 0) +
+  annotate("text", x = 1500, y = (1500/m_real)*alpha - 0.002, label = "FDR Threshold", color = "blue", hjust = 0) +
+  
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "The Discovery Gap in Real Leukemia Data",
+    subtitle = paste("Testing", m_real, "genes. Notice the massive gap between Bonferroni and FDR."),
+    x = "Rank of P-Value",
+    y = "P-Value"
+  )
 ```
