@@ -5,25 +5,42 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
-Firstly we show how random values(random genes with no corellation) can affect an experiment with p_value < 0.05 when the number of experiments is large. 
+Firstly, we do a fake gene expression experiment to see which genes are expressed differently across two groups (e.g. cancer and control). By randomly generating 20,000 genes with randomly assigned labels, we ensure that each hypothesis is actually null (i.e. there is no real difference between the genes across groups). Running a t‑test for each gene then shows how many “significant” p‑values appear by chance when performing thousands of tests simultaneously.
 
 ```{r gene_simulation_no_corellation, message= FALSE, warning=FALSE}
 set.seed(42)
-m <- 20000
-p_values <- runif(m, 0, 1) # Null hypothesis is true for all
+
+# Simulate a realistic gene expression matrix
+m <- 20000   # number of genes
+n1 <- 50     # group 1 samples (control)
+n2 <- 50     # group 2 samples (cancer)
+n <- n1 + n2 # total
+
+# Gene expression: each gene has only random noise
+X <- matrix(rnorm(m * n), nrow = m)
+
+# Create random group labels (e.g. cancer vs control)
+labels <- factor(c(rep("A", n1), rep("B", n2)))
+
+# Run t-tests for each gene using the labels
+p_values <- apply(X, 1, function(gene) {
+  t.test(gene ~ labels_perm)$p.value
+})
 
 # Expected false positives at alpha = 0.05
 alpha <- 0.05
 false_positives <- sum(p_values < alpha)
+
 print(paste("Expected False Positives:", m * alpha))
 print(paste("Actual Simulated False Positives:", false_positives))
 
-# Visual: Distribution of P-values (Page 2)
-hist(p_values, breaks = 50, col = "skyblue", main = "P-value Distribution",
+# Visual: Distribution of P-values
+hist(p_values, breaks = 50, col = "skyblue",
+     main = "P-value Distribution for Random Labels and Genes",
      xlab = "P-value", ylab = "Frequency")
 abline(v = alpha, col = "red", lwd = 2, lty = 2)
 ```
-We can clearly see that there are some values that were tagged as significant but in reallity the correlation is non existant (random genes)
+We can clearly see that there are some values that were tagged as significant but in reality the correlation is non-existent, as the genes are purely random.
 
 
 
