@@ -26,171 +26,158 @@ abline(v = alpha, col = "red", lwd = 2, lty = 2)
 We can clearly see that there are some values that were tagged as significant but in reallity the correlation is non existant (random genes)
 
 
+In this section we implement the Benjamin-Hochberg Procedure vs the Bonferroni
 
+```{r param}
+m <- 20 # Number of tests
+alpha <- 0.05
+k <- 1:m
 
+# 1. Bonferroni Threshold (FWER)
+# Constant line: alpha / m
+bonf_threshold <- rep(alpha / m, m) 
 
-In this section we implement the Benjamin-Hochberg Procedure which is a linear threshold
+# 2. BH Threshold (FDR)
+# Linear line: (k / m) * alpha
+bh_threshold <- (k / m) * alpha 
 
-```{r Benjamini-Hochberg Procedure, message=FALSE, warning=FALSE}
-m_small <- 10
-alpha_fdr <- 0.10
-p_vals_small <- c(0.001, 0.005, 0.015, 0.03, 0.045, 0.12, 0.15, 0.25, 0.50, 0.80)
+# Simulated P-values (some signal, some noise)
+set.seed(123)
+p_values <- sort(c(runif(5, 0, 0.01), runif(15, 0.05, 1)))
 
-# Calculate BH thresholds: (i/m) * alpha
-bh_thresholds <- (1:m_small / m_small) * alpha_fdr
+# Plotting the Comparison
+plot(k, p_values, pch = 19, col = "black", 
+     main = "FWER vs. FDR Thresholds",
+     xlab = "Rank of P-value (k)", ylab = "P-value")
+lines(k, bonf_threshold, col = "red", lwd = 2, lty = 2) # Bonferroni
+lines(k, bh_threshold, col = "blue", lwd = 2)           # FDR/BH
 
-# Visual: BH Plot (Page 5)
-plot(1:m_small, p_vals_small, pch = 19, col = "blue",
-     main = "BH Procedure Threshold", xlab = "Rank (k)", ylab = "P-value")
-lines(1:m_small, bh_thresholds, col = "red", lwd = 2)
-legend("topleft", legend = c("P-values", "BH Threshold (alpha=0.1)"),
-       col = c("blue", "red"), pch = c(19, NA), lty = c(NA, 1))
-    
+legend("topleft", legend = c("P-values", "Bonferroni (FWER)", "BH (FDR)"),
+       col = c("black", "red", "blue"), lty = c(NA, 2, 1), pch = c(19, NA, NA))
+       
 ```
 
 
-```# Mock data for 9 populations (Responders vs Non-Responders)
-# Structure: Treatment A (Success, Fail), Treatment B (Success, Fail)
-data_list <- list(
-  pop1 = matrix(c(10, 2, 2, 10), 2), # Strong difference
-  pop2 = matrix(c(8, 4, 3, 9), 2),
-  pop3 = matrix(c(12, 0, 5, 7), 2),  # Strong difference
-  pop4 = matrix(c(6, 6, 5, 7), 2),
-  pop5 = matrix(c(7, 5, 8, 4), 2),
-  pop6 = matrix(c(11, 1, 6, 6), 2),
-  pop7 = matrix(c(5, 7, 6, 6), 2),
-  pop8 = matrix(c(9, 3, 4, 8), 2),
-  pop9 = matrix(c(10, 2, 9, 3), 2)
-)
 
-# Apply Fisher's Exact Test to each population
-raw_p_values <- sapply(data_list, function(x) fisher.test(x)$p.value)
 
-# Adjustments (Page 8-9)
-bonferroni_p <- p.adjust(raw_p_values, method = "bonferroni")
-fdr_p <- p.adjust(raw_p_values, method = "fdr") # Benjamini-Hochberg
 
-# Results Comparison Table
-results <- data.frame(
-  Population = 1:9,
-  Raw_P = round(raw_p_values, 4),
-  Bonferroni = round(bonferroni_p, 4),
-  FDR_BH = round(fdr_p, 4)
-)
-print(results)
+```{r fscd}
 
-# Count discoveries at alpha = 0.05
-cat("Discoveries (Bonferroni):", sum(bonferroni_p < 0.05), "\n")
-cat("Discoveries (FDR):", sum(fdr_p < 0.05), "\n")
+# Set seed so the random numbers are exactly the same every time you run it
+set.seed(42)
 
-```
+# 1. Simulate the Data
+n_genes <- 1000
+n_samples_per_group <- 10
+alpha <- 0.05
 
-```{r gene_analysis_full, message=FALSE, warning=FALSE}
+# We will simulate 1000 genes. 
+# The first 900 have NO real difference (Null is true).
+# The last 100 have a REAL difference (Alternative is true).
 
-if (!require("BiocManager", quietly = TRUE))
-    install.packages("BiocManager")
+# Control Group (Group A)
+group_A <- matrix(rnorm(n_genes * n_samples_per_group, mean = 10, sd = 2), nrow = n_genes)
 
-# Required Bioconductor packages
-packages <- c("DESeq2", "airway", "ggplot2")
-for (pkg in packages) {
-  if (!require(pkg, character.only = TRUE)) BiocManager::install(pkg)
+# Treatment Group (Group B)
+group_B_null <- matrix(rnorm(900 * n_samples_per_group, mean = 10, sd = 2), nrow = 900)
+group_B_diff <- matrix(rnorm(100 * n_samples_per_group, mean = 13, sd = 2), nrow = 100) 
+group_B <- rbind(group_B_null, group_B_diff)
+
+# 2. Run t-tests on all 1000 genes
+p_values <- numeric(n_genes)
+for(i in 1:n_genes) {
+  test <- t.test(group_A[i, ], group_B[i, ])
+  p_values[i] <- test$p.value
 }
 
-library(DESeq2)
-library(airway)
-library(ggplot2)
+# 3. Apply the Corrections
+# A) Uncorrected
+sig_uncorrected <- p_values < alpha
 
-# Load the airway dataset (RNA-seq of smooth muscle cells)
-data("airway")
+# B) FWER: Bonferroni
+p_bonferroni <- p.adjust(p_values, method = "bonferroni")
+sig_bonferroni <- p_bonferroni < alpha
 
-# Create DESeq2 object; 'dex' is the treatment (dexamethasone)
-dds <- DESeqDataSet(airway, design = ~ dex)
+# C) FDR: Benjamini-Hochberg (BH)
+p_fdr <- p.adjust(p_values, method = "BH")
+sig_fdr <- p_fdr < alpha
 
-# Filter: Remove genes with very low counts (less than 10 total reads)
-dds <- dds[rowSums(counts(dds)) >= 10, ]
+# 4. Tally the Results!
+# Remember: Genes 1-900 are Null (False Positives if flagged)
+# Genes 901-1000 are True signals (True Positives if flagged)
 
-# The DESeq function performs normalization and statistical testing
-dds <- DESeq(dds)
+results <- data.frame(
+  Method = c("Uncorrected (p < 0.05)", "Bonferroni (FWER)", "Benjamini-Hochberg (FDR)"),
+  Total_Flags = c(sum(sig_uncorrected), sum(sig_bonferroni), sum(sig_fdr)),
+  False_Positives = c(sum(sig_uncorrected[1:900]), sum(sig_bonferroni[1:900]), sum(sig_fdr[1:900])),
+  True_Positives = c(sum(sig_uncorrected[901:1000]), sum(sig_bonferroni[901:1000]), sum(sig_fdr[901:1000]))
+)
 
-# results() extracts the table and applies Benjamini-Hochberg FDR by default
-# alpha = 0.05 is our target False Discovery Rate threshold
-res <- results(dds, alpha = 0.05)
-
-# Convert to data frame and sort by adjusted p-value (FDR)
-res_df <- as.data.frame(res)
-res_df <- res_df[order(res_df$padj), ]
-
-# Define significance for plotting
-res_df$sig <- ifelse(!is.na(res_df$padj) & res_df$padj < 0.05, "FDR < 0.05", "Not Sig")
-
-ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj), color = sig)) +
-  geom_point(alpha = 0.4, size = 1.5) +
-  scale_color_manual(values = c("FDR < 0.05" = "red", "Not Sig" = "black")) +
-  theme_minimal() +
-  labs(title = "Volcano Plot of Gene Expression",
-       subtitle = "Red points represent genes passing the 5% False Discovery Rate",
-       x = "Log2 Fold Change",
-       y = "-Log10 FDR (Adjusted P-value)") +
-  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "blue")
-
-# Display top 10 genes with the lowest FDR
-print("Top 10 Significant Genes by FDR:")
-head(res_df[, c("baseMean", "log2FoldChange", "padj")], 10)
+print("--- Case Study Results ---")
+print(results)
 ```
 
 
 
-### What this code shows you:
-
-1.  **The Table:** You will likely see that the "No Correction" method flags thousands of genes, while the "FDR Correction" flags significantly fewer. The difference between those two numbers represents the **False Discoveries** you avoided.
-2.  **The Histograms:** * In the **Raw P-value** plot, you'll see a big spike near zero, but also a "flat" background of random noise across the whole graph. 
-    * In the **FDR** plot, the adjustment pushes the non-significant genes toward 1.0, "cleaning up" your results.
-
-
-
-### Why does this happen?
-Imagine you test 20,000 genes. If you use a standard p-value of 0.05, you expect **1,000 genes** ($20,000 \times 0.05$) to look "significant" purely by random chance. FDR correction (Benjamini-Hochberg) recalculates the threshold so that only about 5% of your *final list* is expected to be false, rather than 5% of *every test you ran*.
-
-
-
-```{r comparison_chunk, message=FALSE, warning=FALSE}
-library(DESeq2)
-library(airway)
+```{r asdsad}
+# Make sure to install ggplot2 if you haven't already: install.packages("ggplot2")
 library(ggplot2)
-library(gridExtra) # For putting plots side-by-side
 
-# 1. Prepare Data
-data("airway")
-dds <- DESeqDataSet(airway, design = ~ dex)
-dds <- DESeq(dds)
-res <- results(dds)
-res_df <- as.data.frame(res)
+# 1. Prepare the data for plotting
+# We need to track which genes were actually true differences vs. nulls
+gene_type <- c(rep("Null (Noise)", 900), rep("True Signal", 100))
 
-# 2. Count "Significant" genes at 0.05 threshold
-raw_sig_count <- sum(res_df$pvalue < 0.05, na.rm = TRUE)
-fdr_sig_count <- sum(res_df$padj < 0.05, na.rm = TRUE)
-
-# 3. Create Comparison Table
-comparison <- data.frame(
-  Method = c("No Correction (Raw P-value)", "With FDR Correction (BH)"),
-  Significant_Genes = c(raw_sig_count, fdr_sig_count)
+plot_data <- data.frame(
+  Gene_ID = 1:n_genes,
+  P_Value = p_values,
+  Type = gene_type
 )
-print(comparison)
 
-# 4. Visualize the Difference
-# Plot A: Distribution of Raw P-values
-p1 <- ggplot(res_df, aes(x = pvalue)) +
-  geom_histogram(fill = "steelblue", bins = 50) +
-  geom_vline(xintercept = 0.05, color = "red", linetype = "dashed") +
-  labs(title = "Raw P-values", subtitle = "Red line = 0.05 cut-off") +
-  theme_minimal()
+# 2. Sort the data by P-value (critical for the BH procedure)
+plot_data <- plot_data[order(plot_data$P_Value), ]
+plot_data$Rank <- 1:n_genes
 
-# Plot B: Distribution of FDR Adjusted P-values
-p2 <- ggplot(res_df, aes(x = padj)) +
-  geom_histogram(fill = "darkorange", bins = 50) +
-  geom_vline(xintercept = 0.05, color = "red", linetype = "dashed") +
-  labs(title = "FDR Adjusted P-values", subtitle = "Notice many genes shift to the right") +
-  theme_minimal()
+# 3. Calculate the threshold lines
+# Bonferroni is a flat line: alpha / m
+bonferroni_threshold <- alpha / n_genes
 
-grid.arrange(p1, p2, ncol = 2) 
+# Benjamini-Hochberg is a diagonal line: (Rank / m) * alpha
+plot_data$BH_Threshold <- (plot_data$Rank / n_genes) * alpha
+
+# 4. Create the plot
+# Note: We zoom in on the bottom left corner (lowest p-values) 
+# because that is where the action happens!
+p <- ggplot(plot_data, aes(x = Rank, y = P_Value)) +
+  # Plot the actual p-values
+  geom_point(aes(color = Type), alpha = 0.8, size = 2.5) +
+  
+  # Draw the Bonferroni line (Red)
+  geom_hline(yintercept = bonferroni_threshold, color = "red", 
+             linetype = "dashed", linewidth = 1) +
+  annotate("text", x = 120, y = bonferroni_threshold + 0.002, 
+           label = "Bonferroni (Strict)", color = "red", hjust = 0) +
+  
+  # Draw the FDR line (Blue)
+  geom_line(aes(y = BH_Threshold), color = "blue", 
+            linetype = "dashed", linewidth = 1) +
+  annotate("text", x = 120, y = (120/n_genes)*alpha - 0.002, 
+           label = "FDR (Forgiving)", color = "blue", hjust = 0) +
+  
+  # Zoom in on the top 150 most significant genes
+  coord_cartesian(xlim = c(1, 150), ylim = c(0, 0.05)) +
+  
+  # Aesthetics and labels
+  scale_color_manual(values = c("Null (Noise)" = "gray70", "True Signal" = "darkorange")) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Why FDR Works Better for Genomics",
+    subtitle = "Points below the dashed lines are declared 'Significant'",
+    x = "Rank of P-Value",
+    y = "P-Value",
+    color = "Actual Gene Status"
+  ) +
+  theme(legend.position = "bottom")
+
+# Display the plot
+print(p)
 ```
