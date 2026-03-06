@@ -121,9 +121,7 @@ tally_table <- data.frame(
 kable(tally_table, caption = "Total Discoveries at Alpha = 0.05")
 ```
 
-As we can see, the BH falsely rejects only 53 hypotheses compared to the 1042 that were falsely rejected before, so it successfully prevents a large rate of false discoveries. 
-
-Bonferroni rejects even less hypotheses (only 5) and therefore performs better for this example. However, this comes at the cost of being extremely conservative. Bonferroni avoids false positives by setting a threshold so strict that it also suppresses almost all true discoveries. BH on the other hand keeps false discoveries low while still allowing a meaningful number of hypotheses to pass the threshold, making it far more useful in large‑scale testing settings where some true effects are expected and we want to be more explorative.
+As we can see from the results, applying both Bonferroni and Benjamini–Hochberg drives the number of significant findings down to zero, because the data actually do not contain true differences and all small p‑values were simply noise. Both methods tighten the significance thresholds and eliminate these false positives entirely. We are left with no discoveries from multiple hypothesis testing. 
 
 ### How does this affect the making of discoveries?
 
