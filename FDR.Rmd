@@ -19,31 +19,31 @@ By randomly generating 20,000 genes with randomly assigned labels, we ensure tha
 set.seed(42)
 
 # Simulate a realistic gene expression matrix
-m <- 20000   # number of genes
+m_noise <- 20000   # number of genes
 n1 <- 50     # group 1 samples (control)
 n2 <- 50     # group 2 samples (cancer)
 n <- n1 + n2 # total
 
 # Gene expression: each gene has only random noise
-X <- matrix(rnorm(m * n), nrow = m)
+X <- matrix(rnorm(m_noise * n), nrow = m_noise)
 
 # Create random group labels (e.g. cancer vs control)
 labels <- factor(c(rep("A", n1), rep("B", n2)))
 
-# Run t-tests for each gene using the labels
-p_values <- apply(X, 1, function(gene) {
+# UNIQUE VARIABLE NAME: p_values_noise
+p_values_noise <- apply(X, 1, function(gene) {
   t.test(gene ~ labels)$p.value
 })
 
 # Expected false positives at alpha = 0.05
 alpha <- 0.05
-false_positives <- sum(p_values < alpha)
+false_positives <- sum(p_values_noise < alpha)
 
-print(paste("Expected False Positives:", m * alpha))
+print(paste("Expected False Positives:", m_noise * alpha))
 print(paste("Actual Simulated False Positives:", false_positives))
 
 # Visual: Distribution of P-values
-hist(p_values, breaks = 50, col = "skyblue",
+hist(p_values_noise, breaks = 50, col = "skyblue",
      main = "P-value Distribution for Random Labels and Genes",
      xlab = "P-value", ylab = "Frequency")
 abline(v = alpha, col = "red", lwd = 2, lty = 2)
@@ -62,12 +62,12 @@ In this section, we implement the Benjamini–Hochberg procedure alongside the B
 # p_values already exists from the t-tests on 20,000 genes
 
 alpha <- 0.05
-m <- length(p_values)
+m <- length(p_values_noise)
 
 # BULLETPROOF FIX: Only try to show 70 if you actually have at least 70!
 num_to_show <- min(70, m) 
 k_show <- 1:num_to_show
-p_sorted <- sort(p_values)[k_show]
+p_sorted <- sort(p_values_noise)[k_show]
 
 # Corresponding thresholds
 bonf_threshold <- rep(alpha / m, length(k_show))
@@ -92,8 +92,8 @@ legend("topleft",
        lwd = c(NA, 2, 2))
 
 # 2. Calculate the Adjusted P-values
-p_adj_bonferroni <- p.adjust(p_values, method = "bonferroni")
-p_adj_fdr <- p.adjust(p_values, method = "BH")
+p_adj_bonferroni <- p.adjust(p_values_noise, method = "bonferroni")
+p_adj_fdr <- p.adjust(p_values_noise, method = "BH")
 
 # 3. Create a clean table of the Top 10 Genes
 clean_table <- data.frame(
@@ -154,18 +154,18 @@ group_B_diff <- matrix(rnorm(100 * n_samples_per_group, mean = 13, sd = 2), nrow
 group_B <- rbind(group_B_null, group_B_diff)
 
 # Run t-tests on all 1000 genes
-p_values <- numeric(n_genes)
+p_values_mixed <- numeric(n_genes)
 for(i in 1:n_genes) {
   test <- t.test(group_A[i, ], group_B[i, ])
-  p_values[i] <- test$p.value
+  p_values_mixed[i] <- test$p.value
 }
 
 # Apply the Corrections
 # Uncorrected p_values
-sig_uncorrected <- p_values < alpha
+sig_uncorrected <- p_values_mixed < alpha
 
-# FWER: Bonferroni
-p_bonferroni <- p.adjust(p_values, method = "bonferroni")
+
+p_bonferroni <- p.adjust(p_values_mixed, method = "bonferroni")
 sig_bonferroni <- p_bonferroni < alpha
 
 # FDR: Benjamini-Hochberg (BH)
