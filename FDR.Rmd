@@ -201,7 +201,7 @@ print(results)
 ```
 
 
-```{r plot_simulation_results}
+```{r plot_simulation_results,fig.width=6.5}
 library(ggplot2)
 
 # We need to track which genes were actually true differences vs. nulls
@@ -234,14 +234,14 @@ p <- ggplot(plot_data, aes(x = Rank, y = P_Value)) +
   # Draw the Bonferroni line (Red)
   geom_hline(yintercept = bonferroni_threshold, color = "red", 
              linetype = "dashed", linewidth = 1) +
-  annotate("text", x = 120, y = bonferroni_threshold + 0.002, 
+  annotate("text", x = 100, y = bonferroni_threshold + 0.003, 
            label = "Bonferroni (Strict)", color = "red", hjust = 0) +
   
   # Draw the FDR line (Blue)
   geom_line(aes(y = BH_Threshold), color = "blue", 
             linetype = "dashed", linewidth = 1) +
-  annotate("text", x = 120, y = (120/n_genes)*alpha - 0.002, 
-           label = "FDR (Forgiving)", color = "blue", hjust = 0) +
+  annotate("text", x = 110, y = (120/n_genes)*alpha + 0.004, 
+           label = "BH (Forgiving)", color = "blue", hjust = 0) +
   
   # Zoom in on the top 150 most significant genes
   coord_cartesian(xlim = c(1, 150), ylim = c(0, 0.05)) +
@@ -250,7 +250,7 @@ p <- ggplot(plot_data, aes(x = Rank, y = P_Value)) +
   scale_color_manual(values = c("Null (Noise)" = "gray70", "True Signal" = "darkorange")) +
   theme_minimal(base_size = 14) +
   labs(
-    title = "FDR vs FWER for Genomics",
+    title = "BH vs Bonferroni for Genomics",
     subtitle = "Points below the dashed lines are declared 'Significant'",
     x = "Rank of P-Value",
     y = "P-Value",
