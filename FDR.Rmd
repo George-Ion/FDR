@@ -3,15 +3,18 @@ title: "False Discovery Rate"
 author: "Georgios Ioannidis, Lisa Theis, Alexander Leonidas, Lisa Kelly, Alexandria DeNaughel"
 date: "`r Sys.Date()`"
 output:
-  pdf_document: default
-  html_document: default
+  pdf_document:
+    number_sections: true
+  html_document:
+    number_sections: true
 ---
 
-### Problem Definition
+
+# Problem Definition
 
 False discovery rate control is needed because modern statistical analyses often involve testing thousands of hypotheses at once, such as in genomics. Here, even a relatively low per‑test error rate leads to a flood of false positives simply because of chance. Traditional methods like the Bonferroni correction protect against any false positives but become so strict that they eliminate real discoveries. FDR offers a middle ground because it limits the expected proportion of false positives among the results declared significant. This allows us to detect meaningful differences while still keeping false discoveries under control. In the following, we will explore the FDR in practice and examine how it behaves under different testing scenarios.
 
-### Why use the FDR?
+# Why use the FDR?
 
 Firstly, we do a fake gene expression experiment to see whether we can identify "genes" that are expressed differently across two groups (e.g. cancer and control). Through this, we want to demonstrate that we can make "discoveries" purely through chance. 
 
@@ -55,7 +58,7 @@ We can clearly see that there are some p-values that were tagged as significant 
 This shows that we somehow need to control for false discoveries in multiple hypothesis testing. Else, these results of these statistical tests cannot be trusted. 
 
 
-### Bonferroni vs. Benjamini Hochberg
+# Bonferroni vs. Benjamini Hochberg
 
 In this section, we implement the Benjamini–Hochberg procedure alongside the Bonferroni correction. Both methods set a significance cutoff to decide which hypotheses are rejected, but they do it differently. Bonferroni uses one fixed and very strict threshold for all tests and tries to prevent any false positives, while the Benjamini–Hochberg procedure assigns a separate threshold to each ranked p‑value to control the rate of false positives. This BH cutoff grows with the rank k, as it is defined as (k/m)q , so higher‑ranked p‑values are compared against a larger allowable value. Once a rank k is found where the p-value is larger than the threshold for that rank, all following p-values are not rejected.
 
@@ -121,7 +124,7 @@ kable(tally_table, caption = "Total Discoveries at Alpha = 0.05")
 
 As we can see from the results, applying both Bonferroni and Benjamini–Hochberg drives the number of significant findings down to zero, because the data actually do not contain true differences and all small p‑values were simply noise. Both methods tighten the significance thresholds and eliminate these false positives entirely. We are left with no discoveries from multiple hypothesis testing.
 
-### How does this affect the making of new discoveries?
+# How does this affect the making of new discoveries?
 
 In the following section, we utilize simulated data to establish a known 'ground truth.' By generating our own dataset where the exact number of true underlying effects is predetermined, we can actually know the true positive and false positive rates. This allows for an objective, mathematical comparison between the performance of the FDR and FWER correction methods in the making of new discoveries. 
 
@@ -268,7 +271,7 @@ Finally, BH finds 53 true positives and only 2 false positives, giving an FDR of
 This is supported visually by the plot, where the threshold for Bonferroni is near 0, while the BH threshold is placed where the density of the true-signal p-values starts to decrease and more noise p-values start to appear in the rank. This is a nice visualization of how tightening or relaxing the significance threshold changes the balance between detecting true signals and avoiding noise.
 
 
-### Studying the FDR using real data
+# Studying the FDR using real data
 
 For this case study, we are moving from simulation to reality using actual Leukemia gene data. This is where statistical analysis gets challenging. In our earlier simulation, we played 'creator' and we knew exactly which genes were real and which were just noise. Here in the real world, we don't have a known 'ground truth.' Because we don't know the exact number of true biological signals, we can't perfectly count our false positives. This is exactly why we rely on the mathematical framework of the False Discovery Rate that we just proved.
 
@@ -367,7 +370,7 @@ ggplot(plot_data_real, aes(x = Rank, y = P_Value)) +
 This plot again shows the visual difference between the cut-off points for BH and Bonferroni. The BH threshold is a lot higher than the strict Bonferroni, and more discoveries are made. 
 Both are far away from the uncorrected p-value significance level. 
 
-### An extension on FDR: Weighted FDR (wFDR)
+# An extension on FDR: Weighted FDR (wFDR)
 
 Standard FDR treats every gene equally. However, in biological research, we often know that certain genes are more likely to be meaningful or more likely to change than others. For instance, genes that show high variance across all our samples are actively changing, while genes with near-zero variance are likely just dormant background noise.
 
@@ -413,7 +416,7 @@ As we can see from the table, weighted BH finds fewer genes overall, but we assu
 
 
 
-##### Comparison of methods using FDR and Weighted FDR on Simulated Data
+## Comparison of methods using FDR and Weighted FDR on Simulated Data
 
 We would like to see the effect of using weighted FDR vs. FDR on the same simulated data set as in one of the previous sections. We do this so we can can calculate the actual difference in FDR.
 
