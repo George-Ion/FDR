@@ -2,7 +2,9 @@
 title: "Gene Expression Analysis and FDR Control"
 author: "Genomics Research"
 date: "`r Sys.Date()`"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ### Problem Definition
@@ -58,7 +60,7 @@ This shows that we somehow need to control for false discoveries in multiple hyp
 In this section, we implement the Benjamini–Hochberg procedure alongside the Bonferroni correction. Both methods set a significance cutoff to decide which hypotheses are rejected, but they do it differently. Bonferroni uses one fixed and very strict threshold for all tests and tries to prevent any false positives, while the Benjamini–Hochberg procedure assigns a separate threshold to each ranked p‑value to control the rate of false positives. This BH cutoff grows with the rank k, as it is defined as (k/m)q , so higher‑ranked p‑values are compared against a larger allowable value. Once a rank k is found where the p-value is larger than the threshold for that rank, all following p-values are not rejected.
 
 ```{r FDRvsFWER}
-# --- Use the p-values from your original simulation ---
+# Use the p-values from your original simulation
 # p_values already exists from the t-tests on 20,000 genes
 
 alpha <- 0.05
@@ -105,11 +107,7 @@ clean_table <- data.frame(
 
 library(knitr)
 
-# Print the Top 10 Table
-kable(clean_table, 
-      digits = 5,
-      col.names = c("Rank", "Raw P-Value", "Bonferroni (Adjusted)", "FDR (Adjusted)"),
-      caption = "Top 10 Genes: Are the adjusted values < 0.05?")
+# Print the Top 10 Tab
 
 # 4. Create a final "Total Significant" Tally for 0.05
 tally_table <- data.frame(
@@ -181,6 +179,80 @@ results <- data.frame(
 )
 
 print(results)
+```
+
+
+
+Implemented weighted FDR 
+
+```{r simulation_data_case_study}
+# Set seed so the random numbers are exactly the same every time you run it
+set.seed(42)
+
+# Simulate the Data
+n_genes <- 1000
+n_samples_per_group <- 10
+alpha <- 0.05
+
+# We will simulate 1000 genes. 
+# The first 900 have NO real difference (Null hypothesis is true).
+# The last 100 have a REAL difference (Decline the null hypothesis).
+
+# Control Group (Group A)
+group_A <- matrix(rnorm(n_genes * n_samples_per_group, mean = 10, sd = 2), nrow = n_genes)
+
+# Treatment Group (Group B)
+group_B_null <- matrix(rnorm(900 * n_samples_per_group, mean = 10, sd = 2), nrow = 900)
+group_B_diff <- matrix(rnorm(100 * n_samples_per_group, mean = 13, sd = 2), nrow = 100) 
+group_B <- rbind(group_B_null, group_B_diff)
+
+# Run t-tests on all 1000 genes
+p_values_mixed <- numeric(n_genes)
+for(i in 1:n_genes) {
+  test <- t.test(group_A[i, ], group_B[i, ])
+  p_values_mixed[i] <- test$p.value
+}
+
+# Standard Corrections
+sig_uncorrected <- p_values_mixed < alpha
+
+# FWER: Bonferroni
+p_bonferroni <- p.adjust(p_values_mixed, method = "bonferroni")
+sig_bonferroni <- p_bonferroni < alpha
+
+# FDR: Benjamini-Hochberg (BH)
+p_fdr <- p.adjust(p_values_mixed, method = "BH")
+sig_fdr <- p_fdr < alpha
+
+# Weighted FDR (wFDR)
+# Combine groups to find overall variance for each gene
+group_combined <- cbind(group_A, group_B)
+gene_variances_sim <- apply(group_combined, 1, var)
+
+# Calculate weights (mean of weights must be 1)
+weights_sim <- gene_variances_sim / mean(gene_variances_sim)
+
+# Divide raw p-values by their weight
+weighted_p_mixed <- p_values_mixed / weights_sim
+weighted_p_mixed <- pmin(weighted_p_mixed, 1) # Cap at 1.0
+
+# Apply BH to the newly weighted p-values
+p_wfdr <- p.adjust(weighted_p_mixed, method = "BH")
+sig_wfdr <- p_wfdr < alpha
+
+#Compare Results
+# Remembe r: Genes 1-900 are Null (False Positives if flagged)
+# Genes 901-1000 are True signals (True Positives if flagged)
+
+results <- data.frame(
+  Method = c("Uncorrected (p < 0.05)", "Bonferroni (FWER)", "Standard BH (FDR)", "Weighted BH (wFDR)"),
+  Total_Flags = c(sum(sig_uncorrected), sum(sig_bonferroni), sum(sig_fdr), sum(sig_wfdr)),
+  False_Positives = c(sum(sig_uncorrected[1:900]), sum(sig_bonferroni[1:900]), sum(sig_fdr[1:900]), sum(sig_wfdr[1:900])),
+  True_Positives = c(sum(sig_uncorrected[901:1000]), sum(sig_bonferroni[901:1000]), sum(sig_fdr[901:1000]), sum(sig_wfdr[901:1000]))
+)
+
+library(knitr)
+kable(results, caption = "Comparing Discovery Rates on Simulated Data")
 ```
 
 
@@ -341,4 +413,47 @@ ggplot(plot_data_real, aes(x = Rank, y = P_Value)) +
     x = "Rank of P-Value",
     y = "P-Value"
   )
+```
+
+
+
+### Incorporating Prior Knowledge: Weighted FDR (wFDR)
+
+Standard FDR treats every gene equally. However, in biological research, we often know that certain genes are more likely to be meaningful than others. For instance, genes that show high variance across all our samples are actively changing, while genes with near-zero variance are likely just dormant background noise. 
+
+We can use Weighted FDR to incorporate this prior knowledge. By assigning a "weight" to each gene based on its overall variance, we can make it slightly easier for highly variable genes to pass the threshold, and stricter for dormant genes. Mathematically, we achieve this by dividing the raw p-value by its weight ($p_{weighted} = p / w$) before applying the Benjamini-Hochberg procedure.
+
+```{r weighted_fdr_case_study}
+# Calculate the overall variance for each of the 6,830 genes
+gene_variances <- apply(gene_data, 2, var)
+
+# Calculate the weights 
+# The golden rule of wFDR: the mean of all weights MUST equal 1
+weights <- gene_variances / mean(gene_variances)
+
+# Apply the weights to our raw p-values
+# Dividing by a weight > 1 makes the p-value smaller (easier to discover)
+# Dividing by a weight < 1 makes the p-value larger (harder to discover)
+weighted_p_values <- real_p_values / weights
+
+# Cap p-values at a maximum of 1.0 just in case a tiny weight inflated them too much
+weighted_p_values <- pmin(weighted_p_values, 1)
+
+# Apply standard Benjamini-Hochberg to the new weighted p-values
+sig_weighted_fdr <- p.adjust(weighted_p_values, method = "BH") < alpha
+
+# Compare all methods
+final_comparison <- data.frame(
+  Method = c("Uncorrected (p < 0.05)", 
+             "Bonferroni (Strict FWER)", 
+             "Standard BH (Balanced FDR)", 
+             "Weighted BH (Prior Knowledge FDR)"),
+  Significant_Genes_Found = c(sum(sig_uncorrected), 
+                              sum(sig_bonferroni), 
+                              sum(sig_fdr), 
+                              sum(sig_weighted_fdr))
+)
+
+library(knitr)
+kable(final_comparison, caption = "Comparing Discovery Rates on Leukemia Data")
 ```
