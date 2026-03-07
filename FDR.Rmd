@@ -1,6 +1,6 @@
 ---
-title: "Gene Expression Analysis and FDR Control"
-author: "Genomics Research"
+title: "False Discovery Rate"
+author: "Georgios Ioannidis, Lisa Theis, Alexander Leonidas, Lisa Kelly, Alexandria DeNaughel"
 date: "`r Sys.Date()`"
 output:
   pdf_document: default
@@ -50,7 +50,7 @@ hist(p_values_noise, breaks = 50, col = "skyblue",
      xlab = "P-value", ylab = "Frequency")
 abline(v = alpha, col = "red", lwd = 2, lty = 2)
 ```
-We can clearly see that there are some p-values that were tagged as significant but in reality the correlation is non-existent, as the genes are purely random. To be exact, there are 1042 rejected hypotheses, which is around \alpha = 5% of 20,000 and also the expected false positive rate. 
+We can clearly see that there are some p-values that were tagged as significant but in reality the correlation is non-existent, as the genes are purely random. To be exact, there are 1042 rejected hypotheses, which is around $\alpha$ = 5% of 20,000 and also the expected number of false positive results. 
 
 This shows that we somehow need to control for false discoveries in multiple hypothesis testing. Else, these results of these statistical tests cannot be trusted. 
 
@@ -100,7 +100,7 @@ p_adj_fdr <- p.adjust(p_values_noise, method = "BH")
 # 3. Create a clean table of the Top 10 Genes
 clean_table <- data.frame(
   Rank = 1:10,
-  Raw_P_Value = sort(p_values)[1:10],
+  Raw_P_Value = sort(p_values_noise)[1:10],
   Adjusted_Bonferroni = sort(p_adj_bonferroni)[1:10],
   Adjusted_FDR = sort(p_adj_fdr)[1:10]
 )
@@ -119,12 +119,11 @@ tally_table <- data.frame(
 kable(tally_table, caption = "Total Discoveries at Alpha = 0.05")
 ```
 
-As we can see from the results, applying both Bonferroni and Benjamini–Hochberg drives the number of significant findings down to zero, because the data actually do not contain true differences and all small p‑values were simply noise. Both methods tighten the significance thresholds and eliminate these false positives entirely. We are left with no discoveries from multiple hypothesis testing. 
+As we can see from the results, applying both Bonferroni and Benjamini–Hochberg drives the number of significant findings down to zero, because the data actually do not contain true differences and all small p‑values were simply noise. Both methods tighten the significance thresholds and eliminate these false positives entirely. We are left with no discoveries from multiple hypothesis testing.
 
-### How does this affect the making of discoveries?
+### How does this affect the making of new discoveries?
 
-
-In the following section, we utilize simulated data to establish a known 'ground truth.' By generating our own dataset where the exact number of true underlying effects is predetermined, we can precisely calculate the true positive and false positive rates. This allows for an objective, mathematical comparison between the performance of the FDR and FWER correction methods
+In the following section, we utilize simulated data to establish a known 'ground truth.' By generating our own dataset where the exact number of true underlying effects is predetermined, we can actually know the true positive and false positive rates. This allows for an objective, mathematical comparison between the performance of the FDR and FWER correction methods in the making of new discoveries. 
 
 
 ```{r simulation_data_case_study}
@@ -142,11 +141,14 @@ alpha <- 0.05
 # The last 100 have a REAL difference (Decline the null hypothesis).
 
 # Control Group (Group A)
-group_A <- matrix(rnorm(n_genes * n_samples_per_group, mean = 10, sd = 2), nrow = n_genes)
+group_A <- matrix(rnorm(n_genes * n_samples_per_group, mean = 10, sd = 2), 
+                  nrow = n_genes)
 
 # Treatment Group (Group B)
-group_B_null <- matrix(rnorm(900 * n_samples_per_group, mean = 10, sd = 2), nrow = 900)
-group_B_diff <- matrix(rnorm(100 * n_samples_per_group, mean = 13, sd = 2), nrow = 100) 
+group_B_null <- matrix(rnorm(900 * n_samples_per_group, mean = 10, sd = 2), 
+                       nrow = 900)
+group_B_diff <- matrix(rnorm(100 * n_samples_per_group, mean = 13, sd = 2), 
+                       nrow = 100) 
 group_B <- rbind(group_B_null, group_B_diff)
 
 # Run t-tests on all 1000 genes
@@ -165,27 +167,257 @@ p_bonferroni <- p.adjust(p_values_mixed, method = "bonferroni")
 sig_bonferroni <- p_bonferroni < alpha
 
 # FDR: Benjamini-Hochberg (BH)
-p_fdr <- p.adjust(p_values, method = "BH")
+p_fdr <- p.adjust(p_values_mixed, method = "BH")
 sig_fdr <- p_fdr < alpha
 
 # Remember: Genes 1-900 are Null (False Positives if flagged)
 # Genes 901-1000 are True signals (True Positives if flagged)
 
+# Calculate FDR for each method
+calc_fdr <- function(fp, tp) {
+  if ((fp + tp) == 0) return(NA)
+  return(fp / (fp + tp))
+}
+
+fdr_values <- c(
+  calc_fdr(sum(sig_uncorrected[1:900]), sum(sig_uncorrected[901:1000])),
+  calc_fdr(sum(sig_bonferroni[1:900]), sum(sig_bonferroni[901:1000])),
+  calc_fdr(sum(sig_fdr[1:900]), sum(sig_fdr[901:1000]))
+)
+
 results <- data.frame(
   Method = c("Uncorrected (p < 0.05)", "Bonferroni (FWER)", "Benjamini-Hochberg (FDR)"),
   Total_Flags = c(sum(sig_uncorrected), sum(sig_bonferroni), sum(sig_fdr)),
   False_Positives = c(sum(sig_uncorrected[1:900]), sum(sig_bonferroni[1:900]), sum(sig_fdr[1:900])),
-  True_Positives = c(sum(sig_uncorrected[901:1000]), sum(sig_bonferroni[901:1000]), sum(sig_fdr[901:1000]))
+  True_Positives = c(sum(sig_uncorrected[901:1000]), sum(sig_bonferroni[901:1000]), sum(sig_fdr[901:1000])),
+  FDR = fdr_values
 )
 
 print(results)
+
 ```
 
 
+```{r plot_simulation_results}
+library(ggplot2)
 
-Implemented weighted FDR 
+# We need to track which genes were actually true differences vs. nulls
+gene_type <- c(rep("Null (Noise)", 900), rep("True Signal", 100))
 
-```{r simulation_data_case_study}
+plot_data <- data.frame(
+  Gene_ID = 1:n_genes,
+  P_Value = p_values_mixed,
+  Type = gene_type
+)
+
+# Sort the data by P-value (critical for the BH procedure)
+plot_data <- plot_data[order(plot_data$P_Value), ]
+plot_data$Rank <- 1:n_genes
+
+# Calculate the threshold lines
+# Bonferroni is a flat line: alpha / m
+bonferroni_threshold <- alpha / n_genes
+
+# Benjamini-Hochberg is a diagonal line: (Rank / m) * alpha
+plot_data$BH_Threshold <- (plot_data$Rank / n_genes) * alpha
+
+# Create the plot
+# Note: We zoom in on the bottom left corner (lowest p-values) 
+# because that is where p_values < 0.05 are 
+p <- ggplot(plot_data, aes(x = Rank, y = P_Value)) +
+  # Plot the actual p-values
+  geom_point(aes(color = Type), alpha = 0.8, size = 2.5) +
+  
+  # Draw the Bonferroni line (Red)
+  geom_hline(yintercept = bonferroni_threshold, color = "red", 
+             linetype = "dashed", linewidth = 1) +
+  annotate("text", x = 120, y = bonferroni_threshold + 0.002, 
+           label = "Bonferroni (Strict)", color = "red", hjust = 0) +
+  
+  # Draw the FDR line (Blue)
+  geom_line(aes(y = BH_Threshold), color = "blue", 
+            linetype = "dashed", linewidth = 1) +
+  annotate("text", x = 120, y = (120/n_genes)*alpha - 0.002, 
+           label = "FDR (Forgiving)", color = "blue", hjust = 0) +
+  
+  # Zoom in on the top 150 most significant genes
+  coord_cartesian(xlim = c(1, 150), ylim = c(0, 0.05)) +
+  
+  # Aesthetics and labels
+  scale_color_manual(values = c("Null (Noise)" = "gray70", "True Signal" = "darkorange")) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "FDR vs FWER for Genomics",
+    subtitle = "Points below the dashed lines are declared 'Significant'",
+    x = "Rank of P-Value",
+    y = "P-Value",
+    color = "Actual Gene Status"
+  ) +
+  theme(legend.position = "bottom")
+
+# Display the plot
+print(p)
+```
+The uncorrected approach flags 144 genes, with 53 false positives and 91 true positives, which produces an FDR of 0.37. That means more than one‑third of all discoveries are wrong. This is exactly what happens when you test many hypotheses without any correction. The 5% Type I error accumulates across hundreds of null genes.
+
+Comparing that to Bonferroni, which is extremely strict. It finds 5 true positives and 0 false positives, giving an FDR of 0. There are no false discoveries, but it misses the vast majority of the 100 actually different genes. This is the cost of controlling the family‑wise error rate.
+
+Finally, BH finds 53 true positives and only 2 false positives, giving an FDR of 0.038, very close to the target level of 0.05. It recovers ten times as many true signals as Bonferroni while keeping false discoveries extremely low. This is how what we want to happen while controlling the FDR: maximize discoveries while keeping the proportion of false ones acceptable.
+
+
+This is supported visually by the plot, where the threshold for Bonferroni is near 0, while the BH threshold is placed where the density of the true-signal p-values starts to decrease and more noise p-values start to appear in the rank. This is a nice visualization of how tightening or relaxing the significance threshold changes the balance between detecting true signals and avoiding noise.
+
+
+### Studying the FDR using real data
+
+For this case study, we are moving from simulation to reality using actual Leukemia gene data. This is where statistical analysis gets challenging. In our earlier simulation, we played 'creator' and we knew exactly which genes were real and which were just noise. Here in the real world, we don't have a known 'ground truth.' Because we don't know the exact number of true biological signals, we can't perfectly count our false positives. This is exactly why we rely on the mathematical framework of the False Discovery Rate that we just proved.
+
+```{r real_gene_case_study, message=FALSE, warning=FALSE}
+library(ISLR)
+
+# Load the Microarray Dataset
+data(NCI60)
+gene_data <- NCI60$data      # The actual gene expression numbers (64 rows, 6830 columns)
+cancer_types <- NCI60$labs   # The labels for each of the 64 cell lines
+
+# We want to compare Leukemia cell lines vs. all other cancer cell lines
+is_leukemia <- cancer_types == "LEUKEMIA"
+
+# Run 6,830 T-tests (One for every single gene)
+# We use apply() to quickly loop through all 6830 columns 
+real_p_values <- apply(gene_data, 2, function(gene_expression) {
+  # Run a t-test comparing Leukemia expression vs. Other cancer expression
+  test_result <- t.test(gene_expression[is_leukemia], gene_expression[!is_leukemia])
+  return(test_result$p.value)
+})
+
+# Apply the Corrections
+alpha <- 0.05
+
+# Find how many are significant under each method
+sig_uncorrected <- real_p_values < alpha
+sig_bonferroni <- p.adjust(real_p_values, method = "bonferroni") < alpha
+sig_fdr <- p.adjust(real_p_values, method = "BH") < alpha
+
+# Summarize the Real-World Impact
+real_results <- data.frame(
+  Method = c("Uncorrected (p < 0.05)", "Bonferroni (FWER)", "Benjamini-Hochberg (FDR)"),
+  Significant_Genes_Found = c(sum(sig_uncorrected), sum(sig_bonferroni), sum(sig_fdr))
+)
+
+cat("Total Genes Tested:", length(real_p_values), "\n\n")
+print(real_results)
+```
+The real‑data experiment shows the same pattern as the simulation above. Though we cannot compute the true false discovery rate here, the consistency across both settings strengthens the interpretation of how each correction method behaves when many hypotheses are tested at once. This shows that controlling the FDR helps with making new discoveries while keeping the rate of false discoveries low. This leads to more discoveries than a strict approach like Bonferroni. 
+
+Gemini was used to help us produce the code for the following visualization:
+
+```{r plot_real_data_ranked, fig.width=9, fig.height=6}
+library(ggplot2)
+
+# Sort the real p-values and assign ranks
+sorted_real_p <- sort(real_p_values)
+m_real <- length(sorted_real_p)
+rank_real <- 1:m_real
+alpha <- 0.05
+
+# Calculate the thresholds for the real dataset
+bonf_thresh_real <- alpha / m_real
+bh_thresh_real <- (rank_real / m_real) * alpha
+
+# Create a dataframe for ggplot
+plot_data_real <- data.frame(
+  Rank = rank_real,
+  P_Value = sorted_real_p,
+  BH_Threshold = bh_thresh_real
+)
+
+# Create the plot
+ggplot(plot_data_real, aes(x = Rank, y = P_Value)) +
+  # Plot the actual real gene p-values
+  geom_point(color = "black", alpha = 0.5, size = 1.5) +
+  
+  # The strict Bonferroni line (Red)
+  geom_hline(yintercept = bonf_thresh_real, color = "red", 
+             linetype = "dashed", linewidth = 1) +
+  
+  # The adaptive FDR line (Blue)
+  geom_line(aes(y = BH_Threshold), color = "blue", 
+            linewidth = 1) +
+  
+  # ZOOM IN: The action happens in the bottom left corner!
+  # We look at the top 2500 genes and zoom the y-axis to just above 0.05
+  coord_cartesian(xlim = c(1, 2500), ylim = c(0, 0.06)) +
+  
+  # Add the Uncorrected 0.05 threshold for reference
+  geom_hline(yintercept = alpha, color = "black", linetype = "dashed") +
+  annotate("text", x = 1500, y = 0.052, label = "Uncorrected (0.05)", color = "gray50") +
+  annotate("text", x = 700, y = bonf_thresh_real + 0.002, label = "Bonferroni Threshold", color = "red", hjust = 0) +
+  annotate("text", x = 1700, y = (1500/m_real)*alpha - 0.002, label = "BH Threshold", color = "blue", hjust = 0) +
+  
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "The Discovery Gap in Real Leukemia Data",
+    subtitle = paste("Testing", m_real, "genes. Notice the massive gap between Bonferroni and FDR."),
+    x = "Rank of P-Value",
+    y = "P-Value"
+  )
+```
+
+This plot again shows the visual difference between the cut-off points for BH and Bonferroni. The BH threshold is a lot higher than the strict Bonferroni, and more discoveries are made. 
+Both are far away from the uncorrected p-value significance level. 
+
+### An extension on FDR: Weighted FDR (wFDR)
+
+Standard FDR treats every gene equally. However, in biological research, we often know that certain genes are more likely to be meaningful or more likely to change than others. For instance, genes that show high variance across all our samples are actively changing, while genes with near-zero variance are likely just dormant background noise.
+
+We can use Weighted FDR to incorporate this prior knowledge. By assigning a "weight" to each gene based on its overall variance, we can make it slightly easier for highly variable genes to pass the threshold, and stricter for dormant genes. Mathematically, we achieve this by dividing the raw p-value by its weight ($p_{weighted} = p / w$) before applying the Benjamini-Hochberg procedure. A weight larger than 1 increases the chance of discovery (p-value decreases), while a weight less than 1 decreases the chance of discovery (p-value increases). This can be used to give larger weights to genes we would expect to change and smaller weights we expect to stay the same across samples. 
+
+```{r weighted_fdr_case_study}
+# Calculate the overall variance for each of the 6,830 genes
+gene_variances <- apply(gene_data, 2, var)
+
+# Calculate the weights 
+# The golden rule of wFDR: the mean of all weights MUST equal 1
+weights <- gene_variances / mean(gene_variances)
+
+# Apply the weights to our raw p-values
+# Dividing by a weight > 1 makes the p-value smaller (easier to discover)
+# Dividing by a weight < 1 makes the p-value larger (harder to discover)
+weighted_p_values <- real_p_values / weights
+
+# Cap p-values at a maximum of 1.0 just in case a tiny 
+# weight inflated them too much
+weighted_p_values <- pmin(weighted_p_values, 1)
+
+# Apply standard Benjamini-Hochberg to the new weighted p-values
+sig_weighted_fdr <- p.adjust(weighted_p_values, method = "BH") < alpha
+
+# Compare all methods
+final_comparison <- data.frame(
+  Method = c("Uncorrected (p < 0.05)", 
+             "Bonferroni (Strict FWER)", 
+             "Standard BH (Balanced FDR)", 
+             "Weighted BH (Prior Knowledge FDR)"),
+  Significant_Genes_Found = c(sum(sig_uncorrected), 
+                              sum(sig_bonferroni), 
+                              sum(sig_fdr), 
+                              sum(sig_weighted_fdr))
+)
+
+library(knitr)
+kable(final_comparison, caption = "Comparing Discovery Rates on Leukemia Data")
+```
+
+As we can see from the table, weighted BH finds fewer genes overall, but we assume the ones it keeps are enriched for biologically active, high‑variance genes. It trades quantity for quality. This is exactly what weighted FDR is designed to do: prioritize discoveries that align with prior biological knowledge while still controlling the overall false discovery rate.
+
+
+
+##### Comparison of methods using FDR and Weighted FDR on Simulated Data
+
+We would like to see the effect of using weighted FDR vs. FDR on the same simulated data set as in one of the previous sections. We do this so we can can calculate the actual difference in FDR.
+
+```{r simulation_data_case_study_weighted_FDR}
 # Set seed so the random numbers are exactly the same every time you run it
 set.seed(42)
 
@@ -244,216 +476,44 @@ sig_wfdr <- p_wfdr < alpha
 # Remembe r: Genes 1-900 are Null (False Positives if flagged)
 # Genes 901-1000 are True signals (True Positives if flagged)
 
+# Function to compute FDR
+calc_fdr <- function(fp, tp) {
+  if ((fp + tp) == 0) return(NA)
+  return(fp / (fp + tp))
+}
+
+# Compute FDR for each method
+emp_fdr <- c(
+  calc_fdr(sum(sig_uncorrected[1:900]), sum(sig_uncorrected[901:1000])),
+  calc_fdr(sum(sig_bonferroni[1:900]), sum(sig_bonferroni[901:1000])),
+  calc_fdr(sum(sig_fdr[1:900]), sum(sig_fdr[901:1000])),
+  calc_fdr(sum(sig_wfdr[1:900]), sum(sig_wfdr[901:1000]))
+)
+
+# Add to results table
 results <- data.frame(
-  Method = c("Uncorrected (p < 0.05)", "Bonferroni (FWER)", "Standard BH (FDR)", "Weighted BH (wFDR)"),
-  Total_Flags = c(sum(sig_uncorrected), sum(sig_bonferroni), sum(sig_fdr), sum(sig_wfdr)),
-  False_Positives = c(sum(sig_uncorrected[1:900]), sum(sig_bonferroni[1:900]), sum(sig_fdr[1:900]), sum(sig_wfdr[1:900])),
-  True_Positives = c(sum(sig_uncorrected[901:1000]), sum(sig_bonferroni[901:1000]), sum(sig_fdr[901:1000]), sum(sig_wfdr[901:1000]))
+  Method = c("Uncorrected (p < 0.05)", 
+             "Bonferroni (FWER)", 
+             "Standard BH (FDR)", 
+             "Weighted BH (wFDR)"),
+  Total_Flags = c(sum(sig_uncorrected), 
+                  sum(sig_bonferroni), 
+                  sum(sig_fdr), 
+                  sum(sig_wfdr)),
+  False_Positives = c(sum(sig_uncorrected[1:900]), 
+                      sum(sig_bonferroni[1:900]), 
+                      sum(sig_fdr[1:900]), 
+                      sum(sig_wfdr[1:900])),
+  True_Positives = c(sum(sig_uncorrected[901:1000]), 
+                     sum(sig_bonferroni[901:1000]), 
+                     sum(sig_fdr[901:1000]), 
+                     sum(sig_wfdr[901:1000])),
+  FDR = emp_fdr
 )
 
 library(knitr)
 kable(results, caption = "Comparing Discovery Rates on Simulated Data")
 ```
 
+As we can see from the table, the use of weighted FDR increased the number of true positives found from 53 to 65, while the false positives only increase from 2 to 3, and while keeping the FDR under 5%.
 
-
-
-```{r plot_simulation_results}
-library(ggplot2)
-
-# We need to track which genes were actually true differences vs. nulls
-gene_type <- c(rep("Null (Noise)", 900), rep("True Signal", 100))
-
-plot_data <- data.frame(
-  Gene_ID = 1:n_genes,
-  P_Value = p_values,
-  Type = gene_type
-)
-
-# Sort the data by P-value (critical for the BH procedure)
-plot_data <- plot_data[order(plot_data$P_Value), ]
-plot_data$Rank <- 1:n_genes
-
-# Calculate the threshold lines
-# Bonferroni is a flat line: alpha / m
-bonferroni_threshold <- alpha / n_genes
-
-# Benjamini-Hochberg is a diagonal line: (Rank / m) * alpha
-plot_data$BH_Threshold <- (plot_data$Rank / n_genes) * alpha
-
-# Create the plot
-# Note: We zoom in on the bottom left corner (lowest p-values) because that is where p_values < 0.05 are 
-p <- ggplot(plot_data, aes(x = Rank, y = P_Value)) +
-  # Plot the actual p-values
-  geom_point(aes(color = Type), alpha = 0.8, size = 2.5) +
-  
-  # Draw the Bonferroni line (Red)
-  geom_hline(yintercept = bonferroni_threshold, color = "red", 
-             linetype = "dashed", linewidth = 1) +
-  annotate("text", x = 120, y = bonferroni_threshold + 0.002, 
-           label = "Bonferroni (Strict)", color = "red", hjust = 0) +
-  
-  # Draw the FDR line (Blue)
-  geom_line(aes(y = BH_Threshold), color = "blue", 
-            linetype = "dashed", linewidth = 1) +
-  annotate("text", x = 120, y = (120/n_genes)*alpha - 0.002, 
-           label = "FDR (Forgiving)", color = "blue", hjust = 0) +
-  
-  # Zoom in on the top 150 most significant genes
-  coord_cartesian(xlim = c(1, 150), ylim = c(0, 0.05)) +
-  
-  # Aesthetics and labels
-  scale_color_manual(values = c("Null (Noise)" = "gray70", "True Signal" = "darkorange")) +
-  theme_minimal(base_size = 14) +
-  labs(
-    title = "FDR vs FWER for Genomics",
-    subtitle = "Points below the dashed lines are declared 'Significant'",
-    x = "Rank of P-Value",
-    y = "P-Value",
-    color = "Actual Gene Status"
-  ) +
-  theme(legend.position = "bottom")
-
-# Display the plot
-print(p)
-```
-The visualization helps us better understand the outcomes of our simulation data
-
-
-For our final case study, we are moving from simulation to reality using actual Leukemia gene data. This is where statistical analysis gets challenging. In our earlier simulation, we played 'creator'—we knew exactly which genes were real and which were just noise. Here in the real world, we don't have a known 'ground truth.' Because we don't know the exact number of true biological signals, we can't perfectly count our false positives. This is exactly why we rely on the mathematical framework of the False Discovery Rate that we just proved.
-
-```{r real_gene_case_study, message=FALSE, warning=FALSE}
-install.packages("ISLR")
-library(ISLR)
-
-# Load the Microarray Dataset
-data(NCI60)
-gene_data <- NCI60$data      # The actual gene expression numbers (64 rows, 6830 columns)
-cancer_types <- NCI60$labs   # The labels for each of the 64 cell lines
-
-# We want to compare Leukemia cell lines vs. all other cancer cell lines
-is_leukemia <- cancer_types == "LEUKEMIA"
-
-# Run 6,830 T-tests (One for every single gene)
-# We use apply() to quickly loop through all 6830 columns 
-real_p_values <- apply(gene_data, 2, function(gene_expression) {
-  # Run a t-test comparing Leukemia expression vs. Other cancer expression
-  test_result <- t.test(gene_expression[is_leukemia], gene_expression[!is_leukemia])
-  return(test_result$p.value)
-})
-
-# Apply the Corrections
-alpha <- 0.05
-
-# Find how many are significant under each method
-sig_uncorrected <- real_p_values < alpha
-sig_bonferroni <- p.adjust(real_p_values, method = "bonferroni") < alpha
-sig_fdr <- p.adjust(real_p_values, method = "BH") < alpha
-
-# Summarize the Real-World Impact
-real_results <- data.frame(
-  Method = c("Uncorrected (p < 0.05)", "Bonferroni (FWER)", "Benjamini-Hochberg (FDR)"),
-  Significant_Genes_Found = c(sum(sig_uncorrected), sum(sig_bonferroni), sum(sig_fdr))
-)
-
-cat("Total Genes Tested:", length(real_p_values), "\n\n")
-print(real_results)
-```
-We can clearly see how much more stricter Bonferroni method is.
-
-Gemini was used to help us produce the code for the visualization
-
-```{r plot_real_data_ranked, fig.width=9, fig.height=6}
-library(ggplot2)
-
-# Sort the real p-values and assign ranks
-sorted_real_p <- sort(real_p_values)
-m_real <- length(sorted_real_p)
-rank_real <- 1:m_real
-alpha <- 0.05
-
-# Calculate the thresholds for the real dataset
-bonf_thresh_real <- alpha / m_real
-bh_thresh_real <- (rank_real / m_real) * alpha
-
-# Create a dataframe for ggplot
-plot_data_real <- data.frame(
-  Rank = rank_real,
-  P_Value = sorted_real_p,
-  BH_Threshold = bh_thresh_real
-)
-
-# Create the plot
-ggplot(plot_data_real, aes(x = Rank, y = P_Value)) +
-  # Plot the actual real gene p-values
-  geom_point(color = "black", alpha = 0.5, size = 1.5) +
-  
-  # The strict Bonferroni line (Red)
-  geom_hline(yintercept = bonf_thresh_real, color = "red", 
-             linetype = "dashed", linewidth = 1) +
-  
-  # The adaptive FDR line (Blue)
-  geom_line(aes(y = BH_Threshold), color = "blue", 
-            linewidth = 1) +
-  
-  # ZOOM IN: The action happens in the bottom left corner!
-  # We look at the top 2500 genes and zoom the y-axis to just above 0.05
-  coord_cartesian(xlim = c(1, 2500), ylim = c(0, 0.06)) +
-  
-  # Add the Uncorrected 0.05 threshold for reference
-  geom_hline(yintercept = alpha, color = "gray50", linetype = "dotted") +
-  annotate("text", x = 2000, y = 0.052, label = "Uncorrected (0.05)", color = "gray50") +
-  annotate("text", x = 100, y = bonf_thresh_real + 0.002, label = "Bonferroni", color = "red", hjust = 0) +
-  annotate("text", x = 1500, y = (1500/m_real)*alpha - 0.002, label = "FDR Threshold", color = "blue", hjust = 0) +
-  
-  theme_minimal(base_size = 14) +
-  labs(
-    title = "The Discovery Gap in Real Leukemia Data",
-    subtitle = paste("Testing", m_real, "genes. Notice the massive gap between Bonferroni and FDR."),
-    x = "Rank of P-Value",
-    y = "P-Value"
-  )
-```
-
-
-
-### Incorporating Prior Knowledge: Weighted FDR (wFDR)
-
-Standard FDR treats every gene equally. However, in biological research, we often know that certain genes are more likely to be meaningful than others. For instance, genes that show high variance across all our samples are actively changing, while genes with near-zero variance are likely just dormant background noise. 
-
-We can use Weighted FDR to incorporate this prior knowledge. By assigning a "weight" to each gene based on its overall variance, we can make it slightly easier for highly variable genes to pass the threshold, and stricter for dormant genes. Mathematically, we achieve this by dividing the raw p-value by its weight ($p_{weighted} = p / w$) before applying the Benjamini-Hochberg procedure.
-
-```{r weighted_fdr_case_study}
-# Calculate the overall variance for each of the 6,830 genes
-gene_variances <- apply(gene_data, 2, var)
-
-# Calculate the weights 
-# The golden rule of wFDR: the mean of all weights MUST equal 1
-weights <- gene_variances / mean(gene_variances)
-
-# Apply the weights to our raw p-values
-# Dividing by a weight > 1 makes the p-value smaller (easier to discover)
-# Dividing by a weight < 1 makes the p-value larger (harder to discover)
-weighted_p_values <- real_p_values / weights
-
-# Cap p-values at a maximum of 1.0 just in case a tiny weight inflated them too much
-weighted_p_values <- pmin(weighted_p_values, 1)
-
-# Apply standard Benjamini-Hochberg to the new weighted p-values
-sig_weighted_fdr <- p.adjust(weighted_p_values, method = "BH") < alpha
-
-# Compare all methods
-final_comparison <- data.frame(
-  Method = c("Uncorrected (p < 0.05)", 
-             "Bonferroni (Strict FWER)", 
-             "Standard BH (Balanced FDR)", 
-             "Weighted BH (Prior Knowledge FDR)"),
-  Significant_Genes_Found = c(sum(sig_uncorrected), 
-                              sum(sig_bonferroni), 
-                              sum(sig_fdr), 
-                              sum(sig_weighted_fdr))
-)
-
-library(knitr)
-kable(final_comparison, caption = "Comparing Discovery Rates on Leukemia Data")
-```
